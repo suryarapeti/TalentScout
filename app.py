@@ -38,7 +38,11 @@ def initialize_session_state():
         'questions_generated': False,
         'session_start_time': datetime.now(),
         'current_questions': [],
-        'interview_complete': False
+        'interview_complete': False,
+        'current_question_index': 0,
+        'answered_questions': 0,
+        'skipped_questions': 0,
+        'questions_intro_shown': False
     }
     
     for key, value in defaults.items():
@@ -49,9 +53,16 @@ def get_progress_percentage():
     stages = {
         "greeting": 5, "collect_name": 15, "collect_email": 25,
         "collect_phone": 35, "collect_experience": 45, "collect_position": 55,
-        "collect_location": 65, "collect_tech_stack": 75, "generate_questions": 90,
+        "collect_location": 65, "collect_tech_stack": 75, "generate_questions": 85,
         "interview_complete": 100
     }
+    
+    # If we're in the question stage, calculate progress based on questions answered
+    if st.session_state.current_stage == "generate_questions" and st.session_state.current_questions:
+        base_progress = stages["generate_questions"]
+        question_progress = (st.session_state.current_question_index / len(st.session_state.current_questions)) * 10
+        return min(base_progress + question_progress, 95)
+    
     return stages.get(st.session_state.current_stage, 0)
 
 def get_status_info():
@@ -62,6 +73,10 @@ def get_status_info():
     elif stage == "collect_tech_stack":
         return ("💻 Tech Stack Analysis", "status-collecting")
     elif stage == "generate_questions":
+        if st.session_state.current_questions:
+            current_q = st.session_state.current_question_index + 1
+            total_q = len(st.session_state.current_questions)
+            return (f"🎯 Question {current_q}/{total_q}", "status-ready")
         return ("🎯 Interview Ready", "status-ready")
     elif stage == "interview_complete":
         return ("✅ Complete", "status-complete")
@@ -148,13 +163,16 @@ def handle_user_input(user_input: str):
         st.session_state.tech_stack = collector.parse_tech_stack(user_input)
         st.session_state.current_stage = "generate_questions"
         
-        # Generate questions
-        questions_dict = st.session_state.question_generator.generate_questions(
-            st.session_state.tech_stack, Config.QUESTIONS_PER_TECH
+        # Generate combined questions based on experience
+        questions_list = st.session_state.question_generator.generate_combined_questions(
+            st.session_state.tech_stack, 
+            st.session_state.candidate_info.get("experience", "1")
         )
-        st.session_state.current_questions = questions_dict
+        st.session_state.current_questions = questions_list
         
-        response = manager.format_questions(questions_dict)
+        # Show questions introduction
+        response = manager.format_questions_intro(questions_list, st.session_state.candidate_info.get("experience", "1"))
+        st.session_state.questions_intro_shown = True
     
     elif stage == "generate_questions":
         user_lower = user_input.lower().strip()
@@ -176,7 +194,7 @@ def handle_user_input(user_input: str):
             
             {summary_text}
             
-            **Generated Questions:** {len(st.session_state.current_questions.get('python', []))}
+            **Generated Questions:** {len(st.session_state.current_questions)}
             **Session Duration:** {duration_str}
             
             Would you like to download your profile or generate more questions?
@@ -185,21 +203,81 @@ def handle_user_input(user_input: str):
         elif user_lower in ["next", "more", "continue"]:
             response = "I can't generate more questions at this moment. You can provide your answers to the current questions or type 'done' to finish."
         
+        elif user_lower == "skip":
+            # Handle skip request
+            if st.session_state.current_question_index < len(st.session_state.current_questions):
+                st.session_state.skipped_questions += 1
+                st.session_state.current_question_index += 1
+                
+                if st.session_state.current_question_index >= len(st.session_state.current_questions):
+                    # All questions completed
+                    response = manager.format_question_completion(
+                        len(st.session_state.current_questions),
+                        st.session_state.answered_questions,
+                        st.session_state.skipped_questions
+                    )
+                    st.session_state.current_stage = "interview_complete"
+                else:
+                    # Show next question
+                    next_question = st.session_state.current_questions[st.session_state.current_question_index]
+                    response = manager.format_single_question(
+                        next_question,
+                        st.session_state.current_question_index,
+                        len(st.session_state.current_questions)
+                    )
+            else:
+                response = "All questions have been completed!"
+        
+        elif user_lower == "done":
+            # Handle early completion
+            response = manager.format_question_completion(
+                len(st.session_state.current_questions),
+                st.session_state.answered_questions,
+                st.session_state.skipped_questions
+            )
+            st.session_state.current_stage = "interview_complete"
+        
         else:
-            # Step 1: Create the prompt for the LLM using the manager
-            llm_prompt = manager.create_follow_up_prompt(user_input, st.session_state.candidate_info, st.session_state.tech_stack)
-            
-            # Step 2: Use the LLM utility to get a clean response
-            from utils.llm_utils import get_llm_response
-            
-            try:
-                response = get_llm_response(llm_prompt)
-            except Exception as e:
-                print(f"Error during LLM call: {e}")
-                response = "I'm having trouble generating a response right now. Please try again or type 'done' to finish the interview."
-            
-            # Step 3: The manager already adds the user input to history, so we just need to add the assistant's response.
-            # This is handled by the final line of this function, so no need to call manager.add_to_history here.
+            # Handle question answers
+            if not st.session_state.questions_intro_shown:
+                # Show first question if intro hasn't been shown
+                first_question = st.session_state.current_questions[0]
+                response = manager.format_single_question(
+                    first_question,
+                    0,
+                    len(st.session_state.current_questions)
+                )
+                st.session_state.questions_intro_shown = True
+            else:
+                # Process the answer and move to next question
+                if st.session_state.current_question_index < len(st.session_state.current_questions):
+                    st.session_state.answered_questions += 1
+                    st.session_state.current_question_index += 1
+                    
+                    if st.session_state.current_question_index >= len(st.session_state.current_questions):
+                        # All questions completed
+                        response = manager.format_question_completion(
+                            len(st.session_state.current_questions),
+                            st.session_state.answered_questions,
+                            st.session_state.skipped_questions
+                        )
+                        st.session_state.current_stage = "interview_complete"
+                    else:
+                        # Show next question
+                        next_question = st.session_state.current_questions[st.session_state.current_question_index]
+                        response = manager.format_single_question(
+                            next_question,
+                            st.session_state.current_question_index,
+                            len(st.session_state.current_questions)
+                        )
+                else:
+                    # All questions completed
+                    response = manager.format_question_completion(
+                        len(st.session_state.current_questions),
+                        st.session_state.answered_questions,
+                        st.session_state.skipped_questions
+                    )
+                    st.session_state.current_stage = "interview_complete"
             
     else:
         response = manager.get_end_conversation_message()
@@ -246,6 +324,15 @@ def main():
         if st.session_state.tech_stack:
             st.markdown("**💻 Tech Stack:**")
             st.write(", ".join(st.session_state.tech_stack))
+        
+        # Show question progress
+        if st.session_state.current_stage == "generate_questions" and st.session_state.current_questions:
+            st.markdown("**🎯 Interview Progress:**")
+            current_q = st.session_state.current_question_index + 1
+            total_q = len(st.session_state.current_questions)
+            st.write(f"Question {current_q} of {total_q}")
+            st.write(f"Answered: {st.session_state.answered_questions}")
+            st.write(f"Skipped: {st.session_state.skipped_questions}")
         
         st.divider()
         
@@ -341,7 +428,7 @@ def main():
         # Quick actions
         if st.session_state.current_stage == "generate_questions":
             st.markdown("**Quick Actions:**")
-            col_q1, col_q2, col_q3 = st.columns(3)
+            col_q1, col_q2, col_q3, col_q4 = st.columns(4)
             
             with col_q1:
                 if st.button("📋 Summary", use_container_width=True):
@@ -349,13 +436,19 @@ def main():
                     st.rerun()
             
             with col_q2:
-                if st.button("➕ More Questions", use_container_width=True):
-                    handle_user_input("next")
+                if st.button("⏭️ Skip", use_container_width=True):
+                    handle_user_input("skip")
                     st.rerun()
             
             with col_q3:
-                if st.button("✅ Finish", use_container_width=True):
+                if st.button("✅ Done", use_container_width=True):
                     handle_user_input("done")
+                    st.rerun()
+            
+            with col_q4:
+                if st.button("🔄 Reset", use_container_width=True):
+                    for key in list(st.session_state.keys()):
+                        del st.session_state[key]
                     st.rerun()
 
 if __name__ == "__main__":

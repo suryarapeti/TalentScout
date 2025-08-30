@@ -187,79 +187,196 @@ class TechQuestionGenerator:
                 f"What are the best practices you follow when working with {tech}?"
             ]
     
-    def generate_questions_with_llm(self, tech_stack, num_questions_per_tech=3):
-        """Generate questions using the LLM.
+    def determine_question_count(self, experience_years):
+        """Determine the number of questions based on experience level.
+        
+        Args:
+            experience_years (str): Years of experience as a string
+            
+        Returns:
+            int: Number of questions (3-4)
+        """
+        try:
+            # Extract numeric value from experience string
+            import re
+            years_match = re.search(r'(\d+)', str(experience_years))
+            if years_match:
+                years = int(years_match.group(1))
+                if years <= 2:
+                    return 3  # Junior level - 3 questions
+                else:
+                    return 4  # Mid/Senior level - 4 questions
+            else:
+                return 3  # Default to 3 questions
+        except:
+            return 3  # Default to 3 questions
+    
+    def generate_combined_questions_with_llm(self, tech_stack, experience_years):
+        """Generate combined questions across all tech stacks using the LLM.
         
         Args:
             tech_stack (list): List of technologies
-            num_questions_per_tech (int): Number of questions per technology
+            experience_years (str): Years of experience
             
         Returns:
-            dict: A dictionary mapping technologies to lists of questions
+            list: A list of combined questions
         """
+        question_count = self.determine_question_count(experience_years)
+        
         # Create a prompt for the LLM
         prompt = f"""
-        You are a technical interviewer for a tech recruitment agency. Generate {num_questions_per_tech} technical interview questions 
-        for each of the following technologies: {', '.join(tech_stack)}.
+        You are a technical interviewer for a tech recruitment agency. Generate {question_count} technical interview questions 
+        that cover the following technologies: {', '.join(tech_stack)}.
         
         The questions should:
-        1. Be challenging but appropriate for a technical screening interview
+        1. Be challenging but appropriate for a candidate with {experience_years} years of experience
         2. Test both theoretical knowledge and practical application
         3. Reveal the depth of the candidate's understanding
-        4. Be specific to each technology (not generic)
+        4. Cover multiple technologies in a single question when possible
         5. Be clear and concise
+        6. Focus on real-world scenarios and problem-solving
         
-        Format your response as a JSON object where keys are the technologies and values are arrays of questions.
+        Format your response as a JSON array of questions.
         Example format:
-        {{"Python": ["Question 1", "Question 2", "Question 3"], "React": ["Question 1", "Question 2", "Question 3"]}}
+        ["Question 1", "Question 2", "Question 3"]
+        
+        Make sure the questions are comprehensive and test the candidate's ability to work with the combined tech stack.
         """
         
         try:
             # Try to get a response from the LLM
             response = get_llm_response(prompt, response_format="json")
             
-            # Parse the response as a dictionary
-            if isinstance(response, dict):
-                return response
+            # Parse the response as a list
+            if isinstance(response, list):
+                # Ensure we have the right number of questions
+                if len(response) >= question_count:
+                    return response[:question_count]
+                else:
+                    # If LLM returned fewer questions, pad with template questions
+                    return self._pad_questions_with_templates(response, tech_stack, question_count)
             else:
-                # Fallback to templates if response is not a dictionary
-                return self.generate_questions_from_templates(tech_stack, num_questions_per_tech)
+                # Fallback to templates if response is not a list
+                return self.generate_combined_questions_from_templates(tech_stack, experience_years)
         except Exception as e:
             # If there's an error with the LLM, fall back to templates
             print(f"Error generating questions with LLM: {e}")
-            return self.generate_questions_from_templates(tech_stack, num_questions_per_tech)
+            return self.generate_combined_questions_from_templates(tech_stack, experience_years)
     
-    def generate_questions_from_templates(self, tech_stack, num_questions_per_tech=Config.QUESTIONS_PER_TECH):
-        """Generate questions from templates for each technology in the tech stack.
+    def _pad_questions_with_templates(self, llm_questions, tech_stack, target_count):
+        """Pad LLM questions with template questions to reach target count.
+        
+        Args:
+            llm_questions (list): Questions from LLM
+            tech_stack (list): List of technologies
+            target_count (int): Target number of questions
+            
+        Returns:
+            list: Padded list of questions
+        """
+        padded_questions = llm_questions.copy()
+        
+        # Get template questions for each tech
+        all_template_questions = []
+        for tech in tech_stack:
+            tech_questions = self.get_questions_from_template(tech, 2)
+            all_template_questions.extend(tech_questions)
+        
+        # Add template questions until we reach target count
+        for question in all_template_questions:
+            if len(padded_questions) >= target_count:
+                break
+            if question not in padded_questions:
+                padded_questions.append(question)
+        
+        return padded_questions[:target_count]
+    
+    def generate_combined_questions_from_templates(self, tech_stack, experience_years):
+        """Generate combined questions from templates across all tech stacks.
         
         Args:
             tech_stack (list): List of technologies
-            num_questions_per_tech (int): Number of questions per technology
+            experience_years (str): Years of experience
             
         Returns:
-            dict: A dictionary mapping technologies to lists of questions
+            list: A list of combined questions
         """
-        questions = {}
+        question_count = self.determine_question_count(experience_years)
+        all_questions = []
         
+        # Collect questions from all tech stacks
         for tech in tech_stack:
-            questions[tech] = self.get_questions_from_template(tech, num_questions_per_tech)
+            tech_questions = self.get_questions_from_template(tech, 2)
+            all_questions.extend(tech_questions)
         
-        return questions
+        # Shuffle and select the required number of questions
+        import random
+        random.shuffle(all_questions)
+        
+        # Ensure we have enough questions
+        if len(all_questions) < question_count:
+            # Add some generic cross-tech questions
+            generic_questions = [
+                "How do you approach learning new technologies?",
+                "Describe a project where you integrated multiple technologies.",
+                "How do you handle debugging across different technology stacks?",
+                "What's your approach to code review and quality assurance?",
+                "How do you stay updated with the latest technology trends?"
+            ]
+            all_questions.extend(generic_questions)
+        
+        return all_questions[:question_count]
     
-    def generate_questions(self, tech_stack, num_questions_per_tech=Config.QUESTIONS_PER_TECH):
-        """Generate technical questions based on the candidate's tech stack.
+    def generate_combined_questions(self, tech_stack, experience_years):
+        """Generate combined technical questions across all tech stacks.
         
         Args:
             tech_stack (list): The candidate's tech stack
-            num_questions_per_tech (int): Number of questions to generate per technology
+            experience_years (str): Years of experience
             
         Returns:
-            dict: A dictionary mapping technologies to lists of questions
+            list: A list of combined questions (3-4 total)
         """
         # Try to generate questions with the LLM first
         try:
-            return self.generate_questions_with_llm(tech_stack, num_questions_per_tech)
+            return self.generate_combined_questions_with_llm(tech_stack, experience_years)
         except Exception as e:
             # If there's an error, fall back to template-based questions
             print(f"Error generating questions with LLM: {e}")
-            return self.generate_questions_from_templates(tech_stack, num_questions_per_tech)
+            return self.generate_combined_questions_from_templates(tech_stack, experience_years)
+    
+    def get_next_question(self, questions, current_index):
+        """Get the next question from the list.
+        
+        Args:
+            questions (list): List of all questions
+            current_index (int): Current question index
+            
+        Returns:
+            tuple: (question, is_last_question, progress_info)
+        """
+        if current_index >= len(questions):
+            return None, True, "All questions completed!"
+        
+        question = questions[current_index]
+        is_last = current_index == len(questions) - 1
+        progress = f"Question {current_index + 1} of {len(questions)}"
+        
+        return question, is_last, progress
+    
+    def format_question_with_options(self, question, current_index, total_questions):
+        """Format a single question with skip option.
+        
+        Args:
+            question (str): The question to display
+            current_index (int): Current question index
+            total_questions (int): Total number of questions
+            
+        Returns:
+            str: Formatted question with options
+        """
+        progress = f"**Question {current_index + 1} of {total_questions}**\n\n"
+        question_text = f"{question}\n\n"
+        options = "**Options:**\n• Answer the question\n• Type 'skip' to move to the next question\n• Type 'done' to finish the interview"
+        
+        return progress + question_text + options

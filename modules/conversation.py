@@ -106,6 +106,78 @@ class ConversationManager:
         self.add_to_history("assistant", prompt)
         return prompt
     
+    def format_questions_intro(self, questions, experience_years):
+        """Format the introduction to the technical questions.
+        
+        Args:
+            questions (list): List of combined questions
+            experience_years (str): Years of experience
+            
+        Returns:
+            str: Formatted introduction message
+        """
+        question_count = len(questions)
+        message = f"""
+        🎯 **Technical Interview Time!**
+        
+        Based on your {experience_years} years of experience and tech stack, I've prepared {question_count} comprehensive technical questions.
+        These questions will test your knowledge across all the technologies you mentioned.
+        
+        I'll ask you one question at a time. For each question, you can:
+        • **Answer the question** - Provide your response
+        • **Type 'skip'** - Move to the next question
+        • **Type 'done'** - Finish the interview early
+        
+        Let's begin with the first question!
+        """
+        
+        self.add_to_history("assistant", message)
+        return message
+    
+    def format_single_question(self, question, current_index, total_questions):
+        """Format a single question for display.
+        
+        Args:
+            question (str): The question to display
+            current_index (int): Current question index
+            total_questions (int): Total number of questions
+            
+        Returns:
+            str: Formatted question message
+        """
+        progress = f"**Question {current_index + 1} of {total_questions}**\n\n"
+        question_text = f"{question}\n\n"
+        options = "**Options:**\n• Answer the question\n• Type 'skip' to move to the next question\n• Type 'done' to finish the interview"
+        
+        message = progress + question_text + options
+        
+        self.add_to_history("assistant", message)
+        return message
+    
+    def format_question_completion(self, total_questions, answered_questions, skipped_questions):
+        """Format the message when all questions are completed.
+        
+        Args:
+            total_questions (int): Total number of questions
+            answered_questions (int): Number of answered questions
+            skipped_questions (int): Number of skipped questions
+            
+        Returns:
+            str: Formatted completion message
+        """
+        message = f"""
+        🎉 **Interview Complete!**
+        
+        You've completed all {total_questions} questions:
+        • **Answered:** {answered_questions} questions
+        • **Skipped:** {skipped_questions} questions
+        
+        Thank you for your time! Your responses have been recorded and will be reviewed by our recruitment team.
+        """
+        
+        self.add_to_history("assistant", message)
+        return message
+    
     def format_questions(self, questions):
         """Format the generated technical questions for display.
         
@@ -145,6 +217,17 @@ class ConversationManager:
                 return True
         
         return False
+    
+    def is_skip_request(self, user_input):
+        """Check if the user wants to skip the current question.
+        
+        Args:
+            user_input (str): The user's input message
+            
+        Returns:
+            bool: True if user wants to skip, False otherwise
+        """
+        return user_input.lower().strip() == "skip"
     
     def get_end_conversation_message(self):
         """Generate the end conversation message.
