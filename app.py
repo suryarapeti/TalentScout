@@ -47,9 +47,9 @@ def initialize_session_state():
 
 def get_progress_percentage():
     stages = {
-        "greeting": 10, "collect_name": 20, "collect_email": 30,
-        "collect_phone": 40, "collect_experience": 50, "collect_position": 60,
-        "collect_location": 70, "collect_tech_stack": 80, "generate_questions": 90,
+        "greeting": 5, "collect_name": 15, "collect_email": 25,
+        "collect_phone": 35, "collect_experience": 45, "collect_position": 55,
+        "collect_location": 65, "collect_tech_stack": 75, "generate_questions": 90,
         "interview_complete": 100
     }
     return stages.get(st.session_state.current_stage, 0)
@@ -104,9 +104,14 @@ def handle_user_input(user_input: str):
     collector = st.session_state.candidate_collector
     
     if stage == "greeting":
+        # First, ask for the name
+        st.session_state.current_stage = "collect_name"
+        response = manager.get_name_prompt()
+    
+    elif stage == "collect_name":
         st.session_state.candidate_info["name"] = user_input.strip()
         st.session_state.current_stage = "collect_email"
-        response = manager.get_name_prompt()
+        response = manager.get_email_prompt()
     
     elif stage == "collect_email":
         if collector.validate_email(user_input):
