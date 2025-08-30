@@ -165,15 +165,26 @@ class ConversationManager:
         Returns:
             str: Formatted completion message
         """
+        # Verify the math adds up
+        total_completed = answered_questions + skipped_questions
+        if total_completed != total_questions:
+            # Log the discrepancy for debugging
+            print(f"Warning: Question count mismatch. Total: {total_questions}, Completed: {total_completed}")
+            print(f"Answered: {answered_questions}, Skipped: {skipped_questions}")
+        
         message = f"""
         🎉 **Interview Complete!**
         
         You've completed all {total_questions} questions:
         • **Answered:** {answered_questions} questions
         • **Skipped:** {skipped_questions} questions
+        • **Total Completed:** {total_completed} questions
         
         Thank you for your time! Your responses have been recorded and will be reviewed by our recruitment team.
         """
+        
+        # Debug: print the message to see if there are any HTML tags
+        print(f"DEBUG - Completion message: {repr(message)}")
         
         self.add_to_history("assistant", message)
         return message

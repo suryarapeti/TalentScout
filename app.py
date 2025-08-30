@@ -60,7 +60,9 @@ def get_progress_percentage():
     # If we're in the question stage, calculate progress based on questions answered
     if st.session_state.current_stage == "generate_questions" and st.session_state.current_questions:
         base_progress = stages["generate_questions"]
-        question_progress = (st.session_state.current_question_index / len(st.session_state.current_questions)) * 10
+        # Calculate progress based on questions completed (answered + skipped)
+        completed_questions = st.session_state.answered_questions + st.session_state.skipped_questions
+        question_progress = (completed_questions / len(st.session_state.current_questions)) * 10
         return min(base_progress + question_progress, 95)
     
     return stages.get(st.session_state.current_stage, 0)
@@ -74,6 +76,7 @@ def get_status_info():
         return ("💻 Tech Stack Analysis", "status-collecting")
     elif stage == "generate_questions":
         if st.session_state.current_questions:
+            # Show the next question to be answered
             current_q = st.session_state.current_question_index + 1
             total_q = len(st.session_state.current_questions)
             return (f"🎯 Question {current_q}/{total_q}", "status-ready")
@@ -93,22 +96,23 @@ def display_chat():
     """Display chat messages with better formatting"""
     for message in st.session_state.messages:
         if message["role"] == "assistant":
-            st.markdown(f"""
-            <div class="assistant-message">
-                🤖 <strong>TalentScout</strong> <small>({message['timestamp']})</small><br>
-                {message['content']}
-            </div>
-            """, unsafe_allow_html=True)
+            # Use markdown formatting instead of HTML
+            st.markdown(f"**🤖 TalentScout** ({message['timestamp']})")
+            # Debug: print the message content
+            print(f"DEBUG - Assistant message content: {repr(message['content'])}")
+            # Clean the content to ensure no HTML-like characters cause issues
+            clean_content = message['content'].replace('<', '&lt;').replace('>', '&gt;')
+            st.markdown(clean_content)
+            st.divider()
         else:
-            st.markdown(f"""
-            <div class="user-message">
-                👤 <strong>You</strong> <small>({message['timestamp']})</small><br>
-                {message['content']}
-            </div>
-            """, unsafe_allow_html=True)
+            # Use markdown formatting instead of HTML
+            st.markdown(f"**👤 You** ({message['timestamp']})")
+            # Clean the content to ensure no HTML-like characters cause issues
+            clean_content = message['content'].replace('<', '&lt;').replace('>', '&gt;')
+            st.markdown(clean_content)
+            st.divider()
 
-    # Add a scroll anchor at the bottom of the chat
-    st.markdown('<div id="chat-anchor"></div>', unsafe_allow_html=True)
+    # No need for chat anchor when using markdown formatting
 
 # In app.py
 def handle_user_input(user_input: str):
@@ -170,8 +174,17 @@ def handle_user_input(user_input: str):
         )
         st.session_state.current_questions = questions_list
         
-        # Show questions introduction
-        response = manager.format_questions_intro(questions_list, st.session_state.candidate_info.get("experience", "1"))
+        # Show questions introduction and first question
+        intro_response = manager.format_questions_intro(questions_list, st.session_state.candidate_info.get("experience", "1"))
+        first_question_response = manager.format_single_question(
+            questions_list[0],
+            0,
+            len(questions_list)
+        )
+        # Combine responses with proper formatting
+        response = f"{intro_response}\n\n{first_question_response}"
+        # Debug: print the response to see if there are any HTML tags
+        print(f"DEBUG - Response content: {repr(response)}")
         st.session_state.questions_intro_shown = True
     
     elif stage == "generate_questions":
@@ -207,9 +220,8 @@ def handle_user_input(user_input: str):
             # Handle skip request
             if st.session_state.current_question_index < len(st.session_state.current_questions):
                 st.session_state.skipped_questions += 1
-                st.session_state.current_question_index += 1
                 
-                if st.session_state.current_question_index >= len(st.session_state.current_questions):
+                if st.session_state.current_question_index + 1 >= len(st.session_state.current_questions):
                     # All questions completed
                     response = manager.format_question_completion(
                         len(st.session_state.current_questions),
@@ -218,7 +230,8 @@ def handle_user_input(user_input: str):
                     )
                     st.session_state.current_stage = "interview_complete"
                 else:
-                    # Show next question
+                    # Move to next question
+                    st.session_state.current_question_index += 1
                     next_question = st.session_state.current_questions[st.session_state.current_question_index]
                     response = manager.format_single_question(
                         next_question,
@@ -252,9 +265,8 @@ def handle_user_input(user_input: str):
                 # Process the answer and move to next question
                 if st.session_state.current_question_index < len(st.session_state.current_questions):
                     st.session_state.answered_questions += 1
-                    st.session_state.current_question_index += 1
                     
-                    if st.session_state.current_question_index >= len(st.session_state.current_questions):
+                    if st.session_state.current_question_index + 1 >= len(st.session_state.current_questions):
                         # All questions completed
                         response = manager.format_question_completion(
                             len(st.session_state.current_questions),
@@ -263,7 +275,8 @@ def handle_user_input(user_input: str):
                         )
                         st.session_state.current_stage = "interview_complete"
                     else:
-                        # Show next question
+                        # Move to next question
+                        st.session_state.current_question_index += 1
                         next_question = st.session_state.current_questions[st.session_state.current_question_index]
                         response = manager.format_single_question(
                             next_question,
@@ -330,7 +343,9 @@ def main():
             st.markdown("**🎯 Interview Progress:**")
             current_q = st.session_state.current_question_index + 1
             total_q = len(st.session_state.current_questions)
+            completed_q = st.session_state.answered_questions + st.session_state.skipped_questions
             st.write(f"Question {current_q} of {total_q}")
+            st.write(f"Completed: {completed_q}/{total_q}")
             st.write(f"Answered: {st.session_state.answered_questions}")
             st.write(f"Skipped: {st.session_state.skipped_questions}")
         
@@ -380,15 +395,7 @@ def main():
         with chat_container:
             display_chat()
 
-        # Add a JavaScript snippet to scroll to the anchor
-        st.markdown("""
-        <script>
-            var chatAnchor = window.parent.document.getElementById("chat-anchor");
-            if (chatAnchor) {
-                chatAnchor.scrollIntoView({behavior: "smooth", block: "end"});
-            }
-        </script>
-        """, unsafe_allow_html=True)
+        # No need for JavaScript scroll when using markdown formatting
         
         # Input
         if st.session_state.current_stage != "interview_complete":
