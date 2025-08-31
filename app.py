@@ -7,13 +7,11 @@ from typing import Dict, List, Optional
 import re
 import pandas as pd
 
-# Import classes from their respective files
 from modules.conversation import ConversationManager
 from modules.candidate_info import CandidateInfoCollector
 from modules.tech_questions import TechQuestionGenerator
-from config.config import Config # Assuming a config.py file exists with a Config class
+from config.config import Config
 
-# Page configuration
 st.set_page_config(
     page_title=f"{Config.APP_NAME}",
     page_icon="🎯",
@@ -112,15 +110,32 @@ def display_chat():
             st.markdown(clean_content)
             st.divider()
 
-    # No need for chat anchor when using markdown formatting
 
-# In app.py
 def handle_user_input(user_input: str):
     """Handle user input based on current stage"""
     add_message("user", user_input)
     stage = st.session_state.current_stage
     manager = st.session_state.conversation_manager
     collector = st.session_state.candidate_collector
+    
+    if manager.is_conversation_ending(user_input):
+
+        exit_response = "👋 Interview session terminated. Starting fresh..."
+        
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        
+
+        initialize_session_state()
+        
+        add_message("assistant", exit_response)
+        
+        new_greeting = st.session_state.conversation_manager.get_greeting()
+        add_message("assistant", new_greeting)
+        
+        st.rerun()
+        
+        return 
     
     if stage == "greeting":
         # First, ask for the name
@@ -190,11 +205,7 @@ def handle_user_input(user_input: str):
     elif stage == "generate_questions":
         user_lower = user_input.lower().strip()
         
-        if manager.is_conversation_ending(user_input):
-            st.session_state.current_stage = "interview_complete"
-            response = manager.get_end_conversation_message()
-        
-        elif user_lower in ["summary", "profile", "info"]:
+        if user_lower in ["summary", "profile", "info"]:
             profile_data = st.session_state.candidate_info.copy()
             profile_data["tech_stack"] = ", ".join(st.session_state.tech_stack)
             
@@ -311,49 +322,94 @@ def export_profile():
 def main():
     initialize_session_state()
     
-    # Sidebar
+    # Enhanced Sidebar with better organization
     with st.sidebar:
-        st.markdown(f"### {Config.APP_NAME}")
-        
-        # Progress
-        progress = get_progress_percentage()
-        st.progress(progress / 100)
-        st.write(f"Progress: {progress}%")
-        
-        # Status
-        status_text, status_class = get_status_info()
-        if status_text:
-            st.markdown(f'<div class="status-badge {status_class}">{status_text}</div>', 
-                       unsafe_allow_html=True)
+        # App Title with better styling
+        st.markdown(f"""
+        <div style="text-align: center; padding: 1rem 0;">
+            <h2 style="margin: 0; color: #667eea; font-weight: 700;">🎯 {Config.APP_NAME}</h2>
+        </div>
+        """, unsafe_allow_html=True)
         
         st.divider()
         
-        # Candidate Info Summary
+        # Progress Section with enhanced styling
+        st.markdown("**📊 Progress Overview**")
+        progress = get_progress_percentage()
+        
+        # Enhanced progress display
+        col_prog1, col_prog2 = st.columns([3, 1])
+        with col_prog1:
+            st.progress(progress / 100)
+        with col_prog2:
+            st.markdown(f"**{progress}%**")
+        
+        st.markdown(f"<small>Stage: {st.session_state.current_stage.replace('_', ' ').title()}</small>", unsafe_allow_html=True)
+        
+        st.divider()
+        
+        # Status Section
+        status_text, status_class = get_status_info()
+        if status_text:
+            st.markdown("**🎯 Current Status**")
+            st.markdown(f'<div class="status-badge {status_class}">{status_text}</div>', 
+                       unsafe_allow_html=True)
+            st.divider()
+        
+        # Candidate Info Section with better organization
         if st.session_state.candidate_info:
-            st.markdown("**👤 Candidate Info:**")
+            st.markdown("**👤 Candidate Profile**")
+            
+            # Create a nice info display
             for key, value in st.session_state.candidate_info.items():
-                st.write(f"**{key.title()}:** {value}")
+                if value:  # Only show if value exists
+                    st.markdown(f"""
+                    <div style="background: rgba(255,255,255,0.1); padding: 0.5rem; border-radius: 0.5rem; margin: 0.25rem 0;">
+                        <strong>{key.title()}:</strong> {value}
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            st.divider()
         
+        # Tech Stack Section
         if st.session_state.tech_stack:
-            st.markdown("**💻 Tech Stack:**")
-            st.write(", ".join(st.session_state.tech_stack))
+            st.markdown("**💻 Technology Stack**")
+            tech_display = ", ".join(st.session_state.tech_stack)
+            st.markdown(f"""
+            <div style="background: rgba(255,255,255,0.1); padding: 0.75rem; border-radius: 0.5rem; margin: 0.25rem 0;">
+                {tech_display}
+            </div>
+            """, unsafe_allow_html=True)
+            st.divider()
         
-        # Show question progress
+        # Interview Progress Section
         if st.session_state.current_stage == "generate_questions" and st.session_state.current_questions:
-            st.markdown("**🎯 Interview Progress:**")
+            st.markdown("**🎯 Interview Progress**")
+            
             current_q = st.session_state.current_question_index + 1
             total_q = len(st.session_state.current_questions)
             completed_q = st.session_state.answered_questions + st.session_state.skipped_questions
-            st.write(f"Question {current_q} of {total_q}")
-            st.write(f"Completed: {completed_q}/{total_q}")
-            st.write(f"Answered: {st.session_state.answered_questions}")
-            st.write(f"Skipped: {st.session_state.skipped_questions}")
+            
+            # Progress metrics
+            col_met1, col_met2 = st.columns(2)
+            with col_met1:
+                st.metric("Current", f"Q{current_q}")
+                st.metric("Completed", f"{completed_q}/{total_q}")
+            with col_met2:
+                st.metric("Answered", st.session_state.answered_questions)
+                st.metric("Skipped", st.session_state.skipped_questions)
+            
+            st.divider()
         
-        st.divider()
+        # Action Buttons Section
+        st.markdown("**⚡ Quick Actions**")
+        
+        # Exit functionality hint
+        st.info("💡 Type 'bye' or 'exit' anytime to restart")
         
         # Export functionality
         if st.session_state.current_stage in ["generate_questions", "interview_complete"]:
-            if st.button("📥 Export Profile", use_container_width=True):
+            if st.button("📥 Export Profile", use_container_width=True, type="primary"):
                 profile_data = export_profile()
                 st.download_button(
                     label="💾 Download JSON",
@@ -368,95 +424,150 @@ def main():
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
+        
+        st.divider()
+        
+        # Footer
+        st.markdown("""
+        <div style="text-align: center; padding: 1rem 0; color: rgba(255,255,255,0.6);">
+            <small>Powered by AI 🤖</small>
+        </div>
+        """, unsafe_allow_html=True)
     
-    # Main content
-    col1, col2, col3 = st.columns([1, 8, 1])
+    # Main Content Area with improved layout
+    # Use a centered layout with proper spacing
+    col_main1, col_main2, col_main3 = st.columns([1, 10, 1])
     
-    with col2:
-        # Header
+    with col_main2:
+        # Enhanced Header Section
         st.markdown(f'<h1 class="main-header">{Config.APP_NAME}</h1>', unsafe_allow_html=True)
         st.markdown('<p class="sub-header">🚀 AI-powered recruitment made simple and effective</p>', unsafe_allow_html=True)
         
-        # Progress bar
+        # Enhanced Progress Bar with better spacing
+        st.markdown("<br>", unsafe_allow_html=True)
         progress = get_progress_percentage()
         st.markdown(f"""
         <div class="progress-container">
             <div class="progress-bar" style="width: {progress}%"></div>
         </div>
         """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
         
-        # Chat interface
+        # Chat Interface with enhanced container
         if not st.session_state.messages:
             greeting = st.session_state.conversation_manager.get_greeting()
             add_message("assistant", greeting)
         
-        # Display chat
-        chat_container = st.container(height=400)
-        with chat_container:
-            display_chat()
-
-        # No need for JavaScript scroll when using markdown formatting
+        # Enhanced chat display with better spacing
+        st.markdown("**💬 Interview Conversation**")
         
-        # Input
+        # Chat container with better styling
+        chat_container = st.container()
+        with chat_container:
+            # Add some padding around the chat
+            st.markdown("<div style='padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 1rem; margin: 1rem 0;'>", unsafe_allow_html=True)
+            display_chat()
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Enhanced Input Section
         if st.session_state.current_stage != "interview_complete":
-            # Use st.form to handle both Enter key and Send button submission
+            st.markdown("**💭 Your Response**")
+            
+            # Add helpful hint about exit functionality
+            st.info("💡 **Tip:** You can type 'bye' or 'exit' at any time to start a new interview session.")
+            
+            # Use st.form for better input handling
             with st.form("chat_form", clear_on_submit=True):
+                # Enhanced input field
                 user_input = st.text_input(
                     "Your response:", 
                     key="user_input",
                     placeholder="Type your message here...",
                     label_visibility="collapsed"
                 )
-                col_input1, col_input2 = st.columns([6, 1])
+                
+                # Better button layout
+                col_input1, col_input2, col_input3 = st.columns([6, 1, 1])
                 with col_input2:
-                    submitted = st.form_submit_button("Send 📤", use_container_width=True)
+                    submitted = st.form_submit_button("Send 📤", use_container_width=True, type="primary")
+                with col_input3:
+                    if st.form_submit_button("⏭️ Skip", use_container_width=True):
+                        handle_user_input("skip")
+                        st.rerun()
                 
                 # Handle input if form is submitted
                 if submitted and user_input.strip():
                     handle_user_input(user_input)
                     st.rerun()
         else:
-            st.success("🎉 Interview session completed successfully!")
+            # Enhanced completion message
+            st.markdown("""
+            <div style="text-align: center; padding: 2rem; background: rgba(16, 185, 129, 0.1); border-radius: 1rem; margin: 2rem 0;">
+                <h2 style="color: #059669;">🎉 Interview Session Completed!</h2>
+                <p style="color: #065f46;">Great job! You've successfully completed the interview process.</p>
+            </div>
+            """, unsafe_allow_html=True)
             
-            # Final actions
-            col_final1, col_final2 = st.columns(2)
+            # Final actions with better layout
+            st.markdown("**📋 Final Actions**")
+            col_final1, col_final2, col_final3 = st.columns([1, 1, 1])
+            
             with col_final1:
-                if st.button("📊 View Summary", use_container_width=True):
+                if st.button("📊 View Summary", use_container_width=True, type="secondary"):
                     st.session_state.current_stage = "generate_questions"
                     handle_user_input("summary")
                     st.rerun()
             
             with col_final2:
-                if st.button("🔄 New Session", use_container_width=True):
+                if st.button("🔄 New Session", use_container_width=True, type="primary"):
                     for key in list(st.session_state.keys()):
                         del st.session_state[key]
                     st.rerun()
+            
+            with col_final3:
+                if st.button("📥 Export Profile", use_container_width=True, type="secondary"):
+                    profile_data = export_profile()
+                    st.download_button(
+                        label="💾 Download",
+                        data=profile_data,
+                        file_name=f"candidate_profile_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                        mime="application/json",
+                        use_container_width=True
+                    )
         
-        # Quick actions
+        # Enhanced Quick Actions Section
         if st.session_state.current_stage == "generate_questions":
-            st.markdown("**Quick Actions:**")
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("**⚡ Quick Actions**")
+            
+            # Better button grid layout
             col_q1, col_q2, col_q3, col_q4 = st.columns(4)
             
             with col_q1:
-                if st.button("📋 Summary", use_container_width=True):
+                if st.button("📋 Summary", use_container_width=True, type="secondary"):
                     handle_user_input("summary")
                     st.rerun()
             
             with col_q2:
-                if st.button("⏭️ Skip", use_container_width=True):
+                if st.button("⏭️ Skip", use_container_width=True, type="secondary"):
                     handle_user_input("skip")
                     st.rerun()
             
             with col_q3:
-                if st.button("✅ Done", use_container_width=True):
+                if st.button("✅ Done", use_container_width=True, type="primary"):
                     handle_user_input("done")
                     st.rerun()
             
             with col_q4:
-                if st.button("🔄 Reset", use_container_width=True):
+                if st.button("🔄 Reset", use_container_width=True, type="secondary"):
                     for key in list(st.session_state.keys()):
                         del st.session_state[key]
                     st.rerun()
+        
+        # Add some bottom spacing
+        st.markdown("<br><br>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
