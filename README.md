@@ -33,6 +33,7 @@
    git clone <repository-url>
    cd TalentScout-Hiring-Assistant-Chatbot
    ```
+
 2. **Create virtual environment**
 
    ```bash
@@ -44,22 +45,26 @@
    # Activate on Windows
    venv\Scripts\activate
    ```
+
 3. **Install dependencies**
 
    ```bash
    pip install -r requirements.txt
    ```
+
 4. **Configure environment variables**
 
    ```bash
    # Create .env file
    echo "OPENAI_API_KEY=your_api_key_here" > .env
    ```
+
 5. **Run the application**
 
    ```bash
    streamlit run app.py
    ```
+
 6. **Access the app**
    Open your browser and navigate to `http://localhost:8501`
 
